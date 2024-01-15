@@ -6,6 +6,7 @@ import { parseChatCompletionMessages } from '../helpers/parseChatCompletionMessa
 import { isDefined } from '@typebot.io/lib'
 import { auth } from '../auth'
 import { baseOptions } from '../baseOptions'
+import { runTools, tools } from '../solomoney'
 
 const nativeMessageContentSchema = {
   content: option.string.layout({
@@ -131,13 +132,60 @@ export const createChatCompletion = createAction({
 
       const openai = new OpenAI(config)
 
-      const response = await openai.chat.completions.create({
-        model: options.model ?? defaultOpenAIOptions.model,
-        temperature: options.temperature
-          ? Number(options.temperature)
-          : undefined,
-        messages: parseChatCompletionMessages({ options, variables }),
-      })
+      let response: OpenAI.Chat.Completions.ChatCompletion
+      const model = options.model ?? defaultOpenAIOptions.model
+      const temperature = options.temperature
+        ? Number(options.temperature)
+        : undefined
+      const messages = parseChatCompletionMessages({ options, variables })
+
+      do {
+        response = await openai.chat.completions.create({
+          model,
+          temperature,
+          messages,
+          tools,
+          tool_choice: 'auto',
+          // tool_choice: {
+          //   type: 'function',
+          //   function: { name: 'calcula_parcela' },
+          // },
+        })
+
+        if (!response.choices[0].message.tool_calls) {
+          break
+        }
+
+        messages.push(response.choices[0].message)
+
+        for (const tool of response.choices[0].message.tool_calls) {
+          const toolName = tool.function.name
+          const toolArguments = tool.function.arguments
+          const toolCallId = tool.id
+
+          const toolResponse = runTools[toolName](JSON.parse(toolArguments))
+
+          console.log(`${toolName}(${toolArguments})`)
+          console.log(toolResponse)
+
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolCallId,
+            // name: toolName,
+            content: toolResponse.toString(),
+          })
+        }
+      } while (true)
+
+      console.log(
+        messages.map((m) => `##### ${m.role} #####\n${m.content}`).join('\n\n')
+      )
+
+      console.log(
+        `##### assistant #####\n${response.choices[0].message.content}`
+      )
+
+      console.log('\n-----\n')
 
       options.responseMapping?.forEach((mapping) => {
         if (!mapping.variableId) return
