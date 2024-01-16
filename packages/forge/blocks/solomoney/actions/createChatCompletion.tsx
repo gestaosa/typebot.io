@@ -146,10 +146,6 @@ export const createChatCompletion = createAction({
           messages,
           tools,
           tool_choice: 'auto',
-          // tool_choice: {
-          //   type: 'function',
-          //   function: { name: 'calcula_parcela' },
-          // },
         })
 
         if (!response.choices[0].message.tool_calls) {
